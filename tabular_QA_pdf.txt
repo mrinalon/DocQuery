@@ -1,0 +1,201 @@
+give me a detailed code for a tabular data question - answering on pdfs system that uses llama and/or faiss in its code
+
+Sure! Below is a detailed Python code example for a system that performs question-answering on tabular data in PDFs using the LLaMA (Large Language Model) and FAISS (Facebook AI Similarity Search). This system extracts tables from PDFs, indexes them using FAISS for efficient retrieval, and uses LLaMA to generate answers based on the tables.
+
+### Requirements
+Before running the code, make sure you have the following libraries installed:
+Copy Code
+sh
+pip install faiss-cpu PyPDF2 tabula-py transformers pandas torch
+
+
+### Code
+
+python
+
+import faiss
+import pandas as pd
+from PyPDF2 import PdfFileReader
+import tabula
+from transformers import LlamaTokenizer, LlamaForQuestionAnswering
+import torch
+
+class PDFTabularQA:
+    def __init__(self):
+        # Load LLaMA tokenizer and model
+        self.tokenizer = LlamaTokenizer.from_pretrained('facebook/llama-base')
+        self.model = LlamaForQuestionAnswering.from_pretrained('facebook/llama-base')
+        self.model.eval()
+
+        # Initialize FAISS index
+        self.dimension = 768  # Dimensionality of LLaMA embeddings
+        self.index = faiss.IndexFlatL2(self.dimension)  # Customize as needed
+
+    def extract_tables(self, pdf_path):
+        tables = tabula.read_pdf(pdf_path, pages='all', multiple_tables=True)
+        return tables
+
+    def embed_table(self, table):
+        table_str = table.to_csv(index=False)
+        inputs = self.tokenizer(table_str, return_tensors='pt')
+        with torch.no_grad():
+            embeddings = self.model(**inputs).pooler_output
+        return embeddings.numpy().squeeze(0)
+
+    def build_index(self, pdf_path):
+        tables = self.extract_tables(pdf_path)
+        for idx, table in enumerate(tables):
+            embeddings = self.embed_table(table)
+            faiss.normalize_L2(embeddings)
+            self.index.add(embeddings.reshape(1, -1))
+
+    def answer_question(self, question, pdf_path, top_k=1):
+        tables = self.extract_tables(pdf_path)
+        question_inputs = self.tokenizer(question, return_tensors='pt')
+        with torch.no_grad():
+            question_embeddings = self.model(**question_inputs).pooler_output.numpy().squeeze(0)
+        
+        faiss.normalize_L2(question_embeddings)
+        distances, indices = self.index.search(question_embeddings.reshape(1, -1), top_k)
+        
+        best_table = tables[indices[0][0]]
+        best_table_str = best_table.to_csv(index=False)
+        
+        qa_inputs = self.tokenizer(question, best_table_str, return_tensors='pt')
+        with torch.no_grad():
+            outputs = self.model(**qa_inputs)
+
+        answer_start = torch.argmax(outputs.start_logits)
+        answer_end = torch.argmax(outputs.end_logits) + 1
+        answer = self.tokenizer.convert_tokens_to_string(
+            self.tokenizer.convert_ids_to_tokens(qa_inputs['input_ids'][0][answer_start:answer_end])
+        )
+        
+        return answer
+
+# Usage example
+qa_system = PDFTabularQA()
+pdf_file = 'example.pdf'
+qa_system.build_index(pdf_file)
+question = "What is the revenue for Q1?"
+answer = qa_system.answer_question(question, pdf_file)
+print(f"Answer: {answer}")
+
+
+### Explanation:
+1. **Libraries and Initialization**:
+
+    - **PyPDF2**: A library for reading PDF files.
+    - **tabula-py**: A library for extracting tables from PDFs into Panda DataFrames.
+    - **transformers**: Hugging Face library for loading LLaMA model and tokenizer.
+    - **faiss**: A library for efficient similarity search and clustering of dense vectors.
+
+2. **PDFTabularQA Class**:
+
+    - `__init__`: Initializes LLaMA tokenizer, model, and FAISS index.
+    - `extract_tables`: Extracts tables from a PDF file using tabula-py.
+    - `embed_table`: Converts tables into embeddings using LLaMA.
+    - `build_index`: Extracts tables from a PDF and indexes them in FAISS for later retrieval.
+    - `answer_question`: Takes a question, searches for the most relevant table in the index, and returns the answer using LLaMA.
+
+3. **Usage**:
+
+    - This demonstrates how to initialize the QA system, build the index from a PDF, and get an answer to a question.
+
+Make sure you replace `'facebook/llama-base'` with the correct LLaMA model name or path appropriate for your system. Also, ensure the `example.pdf` file exists and contains tabular data relevant to the question you're asking.
+
+
+
+
+where do i get the correct model name/ path for 'facebook/llama-base'?
+
+The model name or path for LLaMA (Large Language Model Meta AI) can typically be found from the resources provided by the model's maintainers, such as the Hugging Face model hub. The LLaMA models are developed by Facebook AI (also known as Meta AI). However, at the time of writing, LLaMA models might not be publicly available to self-install due to licensing restrictions. Instead, you might have access to other pre-trained large language models like GPT-2, GPT-3, or BERT, which are readily available in the Hugging Face model hub.
+
+### If you want to stick with the original approach using a publicly available model:
+Here's how you can find correct model names or paths for alternatives:
+
+1. **Visit the Hugging Face Model Hub**:
+
+   - Go to https://huggingface.co/models
+   - Use the search bar to find models like `bert-base-uncased`, `distilbert-base-uncased`, `openai-gpt`, etc.
+   - For example, you can use `bert-base-uncased` which is a well-documented and commonly used model.
+
+2. **Replace `facebook/llama-base` in the code with a valid model name**:
+
+   - Here, I will use `bert-base-uncased` as an example.
+
+### Updated Example with BERT:
+python
+
+import faiss
+import pandas as pd
+from PyPDF2 import PdfFileReader
+import tabula
+from transformers import BertTokenizer, BertModel
+import torch
+
+class PDFTabularQA:
+    def __init__(self):
+        # Load BERT tokenizer and model
+        self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+        self.model = BertModel.from_pretrained('bert-base-uncased')
+        self.model.eval()
+
+        # Initialize FAISS index
+        self.dimension = 768  # Dimensionality of BERT embeddings
+        self.index = faiss.IndexFlatL2(self.dimension)  # Customize as needed
+
+    def extract_tables(self, pdf_path):
+        tables = tabula.read_pdf(pdf_path, pages='all', multiple_tables=True)
+        return tables
+
+    def embed_table(self, table):
+        table_str = table.to_csv(index=False)
+        inputs = self.tokenizer(table_str, return_tensors='pt')
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+            embeddings = outputs.last_hidden_state.mean(dim=1)
+        return embeddings.numpy().squeeze(0)
+
+    def build_index(self, pdf_path):
+        tables = self.extract_tables(pdf_path)
+        for idx, table in enumerate(tables):
+            embeddings = self.embed_table(table)
+            faiss.normalize_L2(embeddings)
+            self.index.add(embeddings.reshape(1, -1))
+
+    def answer_question(self, question, pdf_path, top_k=1):
+        tables = self.extract_tables(pdf_path)
+        question_inputs = self.tokenizer(question, return_tensors='pt')
+        with torch.no_grad():
+            outputs = self.model(**question_inputs)
+            question_embeddings = outputs.last_hidden_state.mean(dim=1).numpy().squeeze(0)
+        
+        faiss.normalize_L2(question_embeddings)
+        distances, indices = self.index.search(question_embeddings.reshape(1, -1), top_k)
+        
+        best_table = tables[indices[0][0]]
+        best_table_str = best_table.to_csv(index=False)
+
+        qa_inputs = self.tokenizer(text=question, text_pair=best_table_str, return_tensors='pt')
+        with torch.no_grad():
+            outputs = self.model(**qa_inputs)
+
+        answer_start = torch.argmax(outputs.start_logits)
+        answer_end = torch.argmax(outputs.end_logits) + 1
+        answer = self.tokenizer.convert_tokens_to_string(
+            self.tokenizer.convert_ids_to_tokens(qa_inputs['input_ids'][0][answer_start:answer_end])
+        )
+        
+        return answer
+
+# Usage example
+qa_system = PDFTabularQA()
+pdf_file = 'example.pdf'
+qa_system.build_index(pdf_file)
+question = "What is the revenue for Q1?"
+answer = qa_system.answer_question(question, pdf_file)
+print(f"Answer: {answer}")
+
+
+Replace the `bert-base-uncased` with any other appropriate model name you find on the Hugging Face Model Hub that fits your use-case better. Make sure the model you choose supports the required tasks.
